@@ -1,0 +1,59 @@
+// 1. DISCOVERY: Find the Docker containers
+// For Colima: Use the internal Docker socket exposed by Colima to containers
+// When running in docker-compose, containers have access to the host's Docker daemon
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+  refresh_interval = "15s"
+}
+
+// 2. RELABEL: Initial metadata cleanup (Global Labels)
+discovery.relabel "docker_logs" {
+  targets = discovery.docker.containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.+)"
+    target_label  = "container_name"
+  }
+
+  // Set a base job label for the database index
+  rule {
+    replacement  = "docker-services"
+    target_label = "job"
+  }
+}
+
+// 3. SOURCE: Read the logs
+loki.source.docker "docker_logs" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.docker_logs.output
+  forward_to = [loki.process.log_refiner.receiver]
+}
+
+// 4. PROCESS: The "Brain" of your indexing strategy
+loki.process "log_refiner" {
+  forward_to = [loki.write.loki.receiver]
+
+  // Extract projectID and traceId from the JSON log body
+  stage.json {
+    expressions = {
+      project_id = "projectID",
+      trace_id   = "traceId",
+    }
+  }
+
+  // Promote projectID to a LABEL (Database Index)
+  // We keep traceId as a "parsed field" but NOT a label to save memory
+  stage.labels {
+    values = {
+      project_id = "project_id",
+    }
+  }
+}
+
+// 5. WRITE: Send to the Database
+loki.write "loki" {
+  endpoint {
+    url = "http://localhost:3100/loki/api/v1/push"
+  }
+}

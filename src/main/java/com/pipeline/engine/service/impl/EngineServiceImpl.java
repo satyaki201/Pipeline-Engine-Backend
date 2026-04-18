@@ -66,13 +66,13 @@ public class EngineServiceImpl implements EngineService {
         }
         var aliveContainer = dockerClient.listContainersCmd().exec();
         for (var it : aliveContainer) {
-            dockerClient.stopContainerCmd(it.getId()).exec();
+//            dockerClient.stopContainerCmd(it.getId()).exec();
         }
         log.info("Docker Alive Containers {}", aliveContainer);
         var newContainer = dockerClient.createContainerCmd(backgroundOs)
                 .withHostConfig(new HostConfig()
                         .withMemory(256 * 1024 * 1024L)
-                        .withPortBindings(PortBinding.parse("9979:3000"))
+                        .withPortBindings(PortBinding.parse("9479:3000"))
                         .withBinds(new Bind(clonedPath.getAbsolutePath(), new Volume("/app/workspace"))))
                 .withStopTimeout(10)
                 .withCmd("tail", "-f", "/dev/null")
@@ -85,7 +85,7 @@ public class EngineServiceImpl implements EngineService {
             var containerId = newContainer.getId();
             var executionStatement = dockerClient.execCreateCmd(containerId).withAttachStderr(true)
                     .withAttachStdout(true)
-                    .withCmd("sh", "-c", "cd app/workspace && " + it.getCommand())
+                    .withCmd("sh", "-c", "cd app/workspace && " + it.getCommand() + "| tee /proc/1/fd/1")
                     .exec();
 
             //TODO: Understand exec method
